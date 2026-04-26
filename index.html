@@ -117,10 +117,9 @@
     
     let typingTimer, ghostBusterTimer;
     let isTypingNow = false; 
-
-    // НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ЗВУКА И УВЕДОМЛЕНИЙ
     let audioCtx;
     let isInitialLoad = true; 
+    let unreadCounts = {};
 
     const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
 
@@ -230,31 +229,26 @@
         document.getElementById('app-screen').style.display = 'flex';
         
         renderContacts();
-        
-        // Запрашиваем разрешение на пуши через 2 секунды после входа
         setTimeout(askNotificationPermission, 2000); 
         
         db.ref('messages').on('child_added', (snapshot) => {
             const m = snapshot.val();
             allMessages.push(m);
 
-            // Отрисовка сообщения, если открыт нужный чат
+            // Если сообщение пришло мне и это не тот чат, который сейчас открыт
+            if (!isInitialLoad && m.receiver === myId && activeTarget !== m.sender) {
+                // Увеличиваем счетчик для отправителя
+                unreadCounts[m.sender] = (unreadCounts[m.sender] || 0) + 1;
+                renderContacts(); // Перерисовываем список контактов с баджем
+                playPopSound();
+                showNotification(users[m.sender].n, m.content);
+            }
+
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
                 renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
             }
-
-            // ЗВУК И УВЕДОМЛЕНИЕ ДЛЯ НОВЫХ СООБЩЕНИЙ
-            if (!isInitialLoad && m.receiver === myId) {
-                playPopSound(); 
-                
-                // Пуш придет, если браузер свернут ИЛИ открыт список контактов / чужой чат
-                if (document.hidden || activeTarget !== m.sender) {
-                    showNotification(users[m.sender].n, m.content);
-                }
-            }
         });
 
-        // Снимаем блокировку уведомлений через 2 секунды (когда история прогрузилась)
         setTimeout(() => { isInitialLoad = false; }, 2000);
 
         const myStatusRef = db.ref('status/' + myId);
@@ -276,23 +270,35 @@
             
             const userState = onlineUsers[id]; 
             const isOnline = userState && userState.online;
+            const unread = unreadCounts[id] || 0; // Берем количество новых сообщений
             
             const statusColor = isOnline ? '#25D366' : '#bbb';
             const statusText = isOnline ? 'в сети' : 'был(а) недавно';
 
+            // Добавляем верстку для индикатора (баджа)
+            const badgeHtml = unread > 0 
+                ? `<div style="background:#25D366; color:white; border-radius:50%; min-width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; padding:0 5px;">${unread}</div>` 
+                : '';
+
             list.innerHTML += `
                 <div class="contact-item" onclick="openChat('${id}')">
                     <div class="avatar" style="border: 2px solid ${statusColor}">${users[id].i}</div>
-                    <div class="contact-info">
+                    <div class="contact-info" style="flex: 1;">
                         <b>${users[id].n}</b><br>
                         <small style="color:${statusColor}">${statusText}</small>
                     </div>
+                    ${badgeHtml}
                 </div>`;
         }
     }
 
     function openChat(id) {
         activeTarget = id;
+        
+        // СБРОС СЧЕТЧИКА: когда открываем чат, обнуляем непрочитанные
+        unreadCounts[id] = 0; 
+        renderContacts(); 
+
         document.getElementById('contacts-list').style.display = 'none';
         document.getElementById('chat-window').style.display = 'flex';
         document.getElementById('back-btn').style.display = 'block';
