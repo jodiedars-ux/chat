@@ -125,22 +125,32 @@
 
     // Новый вход через обычную таблицу
     async function authLogin() {
-        const loginVal = document.getElementById('auth-email').value.trim();
-        const passVal = document.getElementById('auth-pass').value.trim();
-        const errDiv = document.getElementById('auth-error');
-        const btn = document.getElementById('auth-submit-btn');
-        
-        if (!loginVal || !passVal) {
-            errDiv.innerText = 'Введите логин и пароль';
+    const loginVal = document.getElementById('auth-email').value.trim();
+    const passVal = document.getElementById('auth-pass').value.trim();
+    const errDiv = document.getElementById('auth-error');
+    const btn = document.getElementById('auth-submit-btn');
+    
+    if (!loginVal || !passVal) {
+        errDiv.innerText = 'Введите логин и пароль';
+        errDiv.style.display = 'block';
+        return;
+    }
+
+    errDiv.style.display = 'none';
+    btn.innerText = 'Связь с базой...';
+    btn.disabled = true;
+
+    // Устанавливаем принудительный таймер на 10 секунд
+    const timeout = setTimeout(() => {
+        if (btn.disabled) {
+            errDiv.innerText = 'Ошибка: Провайдер сбросил соединение (таймаут)';
             errDiv.style.display = 'block';
-            return;
+            btn.innerText = 'Войти';
+            btn.disabled = false;
         }
+    }, 10000);
 
-        errDiv.style.display = 'none';
-        btn.innerText = 'Проверка...';
-        btn.disabled = true;
-
-        // Ищем пользователя в нашей новой таблице
+    try {
         const { data, error } = await db
             .from('family_access')
             .select('role')
@@ -148,17 +158,27 @@
             .eq('password', passVal)
             .single();
 
-        if (error || !data) {
-            errDiv.innerText = 'Ошибка: неверный логин или доступ заблокирован';
+        clearTimeout(timeout);
+
+        if (error) {
+            errDiv.innerText = 'Ошибка базы: ' + error.message;
             errDiv.style.display = 'block';
-            btn.innerText = 'Войти';
-            btn.disabled = false;
+        } else if (!data) {
+            errDiv.innerText = 'Неверный логин или пароль';
+            errDiv.style.display = 'block';
         } else {
-            // Успех! Сохраняем роль и заходим
             localStorage.setItem('family_chat_user', data.role);
             location.reload(); 
         }
+    } catch (e) {
+        clearTimeout(timeout);
+        errDiv.innerText = 'Критическая ошибка сети! Tele2 блокирует запрос.';
+        errDiv.style.display = 'block';
+    } finally {
+        btn.innerText = 'Войти';
+        btn.disabled = false;
     }
+}
 
     function logout() { 
         localStorage.removeItem('family_chat_user');
