@@ -118,7 +118,22 @@
     let typingTimer, ghostBusterTimer;
     let isTypingNow = false; 
 
+    // НОВЫЕ ПЕРЕМЕННЫЕ ДЛЯ ЗВУКА И УВЕДОМЛЕНИЙ
+    let audioCtx;
+    let isInitialLoad = true; 
+
     const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
+
+    // --- РАЗБЛОКИРОВКА ЗВУКА ПРИ ПЕРВОМ КЛИКЕ ---
+    document.body.addEventListener('click', () => {
+        if (!audioCtx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }, { once: true });
 
     function checkAuth() {
         if (myId && users[myId]) {
@@ -127,7 +142,6 @@
             document.getElementById('login-screen').style.display = 'flex';
         }
     }
-    
     checkAuth();
 
     async function authLogin() {
@@ -172,21 +186,43 @@
         location.reload(); 
     }
 
+    // --- НОВАЯ ФУНКЦИЯ ЗВУКА ---
     function playPopSound() {
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
+            if (!audioCtx) return; // Если пользователь еще ни разу не нажал на экран
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(audioCtx.destination);
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.5, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             osc.start();
-            osc.stop(ctx.currentTime + 0.1);
+            osc.stop(audioCtx.currentTime + 0.1);
         } catch(e) {}
+    }
+
+    // --- ФУНКЦИИ УВЕДОМЛЕНИЙ ---
+    function askNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }
+
+    function showNotification(title, text) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            const notif = new Notification(title, { 
+                body: text, 
+                icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png' 
+            });
+            notif.onclick = function() {
+                window.focus(); // Открывает вкладку при клике на пуш
+            };
+        }
     }
 
     function showApp() {
@@ -195,21 +231,32 @@
         
         renderContacts();
         
-        // Слушаем новые сообщения
+        // Запрашиваем разрешение на пуши через 2 секунды после входа
+        setTimeout(askNotificationPermission, 2000); 
+        
         db.ref('messages').on('child_added', (snapshot) => {
             const m = snapshot.val();
             allMessages.push(m);
 
+            // Отрисовка сообщения, если открыт нужный чат
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
                 renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
             }
 
-            if (m.receiver === myId && m.sender !== activeTarget) {
+            // ЗВУК И УВЕДОМЛЕНИЕ ДЛЯ НОВЫХ СООБЩЕНИЙ
+            if (!isInitialLoad && m.receiver === myId) {
                 playPopSound(); 
+                
+                // Пуш придет, если браузер свернут ИЛИ открыт список контактов / чужой чат
+                if (document.hidden || activeTarget !== m.sender) {
+                    showNotification(users[m.sender].n, m.content);
+                }
             }
         });
 
-        // Настройка статуса "в сети"
+        // Снимаем блокировку уведомлений через 2 секунды (когда история прогрузилась)
+        setTimeout(() => { isInitialLoad = false; }, 2000);
+
         const myStatusRef = db.ref('status/' + myId);
         myStatusRef.set({ online: true, typing_to: null });
         myStatusRef.onDisconnect().remove();
@@ -257,7 +304,6 @@
         const cont = document.getElementById('messages-container');
         cont.innerHTML = '';
         
-        // Отрисовка истории из памяти
         allMessages.forEach(m => {
             if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
                 renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
