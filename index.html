@@ -231,16 +231,33 @@
     }
 
     function openChat(id) {
-        activeTarget = id; unreadCounts[id] = 0; renderContacts();
+        activeTarget = id; 
+        unreadCounts[id] = 0; 
+        renderContacts();
+
         document.getElementById('contacts-list').style.display = 'none';
         document.getElementById('chat-window').style.display = 'flex';
         document.getElementById('back-btn').style.display = 'block';
         document.getElementById('header-name').innerText = users[id].n;
         document.getElementById('header-avatar').innerText = users[id].i;
+        
         updateStatusUI();
-        const cont = document.getElementById('messages-container'); cont.innerHTML = '';
-        allMessages.forEach(m => { if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp); });
-        cont.scrollTop = cont.scrollHeight;
+
+        const cont = document.getElementById('messages-container'); 
+        cont.innerHTML = '';
+        
+        // Отрисовываем историю
+        allMessages.forEach(m => { 
+            if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
+                renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
+            } 
+        });
+        
+        // Магия тут: прокручиваем вниз с небольшой задержкой (100мс), 
+        // чтобы браузер успел отрисовать все блоки сообщений
+        setTimeout(() => {
+            cont.scrollTop = cont.scrollHeight;
+        }, 100);
     }
 
     function updateStatusUI() {
@@ -296,10 +313,20 @@
     function renderMsg(text, type, time) {
         const cont = document.getElementById('messages-container');
         const t = new Date(time || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const div = document.createElement('div'); div.className = `msg ${type}`;
-        if (text.startsWith('data:image')) div.innerHTML = `<img src="${text}" style="max-width:100%; border-radius:8px; display:block;"><span class="msg-time">${t}</span>`;
-        else div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
-        cont.appendChild(div); cont.scrollTop = cont.scrollHeight;
+        const div = document.createElement('div'); 
+        div.className = `msg ${type}`;
+        
+        if (text.startsWith('data:image')) {
+            // Добавляем onload="this.closest('#messages-container').scrollTop = this.closest('#messages-container').scrollHeight"
+            // Это заставит чат еще раз прыгнуть вниз, когда картинка полностью прогрузится
+            div.innerHTML = `<img src="${text}" style="max-width:100%; border-radius:8px; display:block;" onload="this.parentElement.parentElement.scrollTop = this.parentElement.parentElement.scrollHeight">
+                             <span class="msg-time">${t}</span>`;
+        } else {
+            div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
+        }
+        
+        cont.appendChild(div);
+        cont.scrollTop = cont.scrollHeight;
     }
 function cleanupOldMessages() {
         // Вычисляем время, которое было ровно 7 дней назад
