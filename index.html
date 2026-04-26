@@ -150,7 +150,7 @@
             const snapshot = await db.ref('family_access/' + loginVal).once('value');
             const userData = snapshot.val();
 
-            if (userData && String(userData) === passVal) {{
+            if (userData && String(userData) === passVal) {
                 localStorage.setItem('family_chat_user', loginVal);
                 location.reload(); 
             } else {
