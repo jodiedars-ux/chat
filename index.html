@@ -49,8 +49,9 @@
         #msg-input { flex: 1; padding: 10px 15px; border: none; border-radius: 20px; font-size: 16px; outline: none; }
         .send-btn { background: var(--accent); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; }
         
-        .emoji-bar { background: #f0f2f5; padding: 5px 10px; display: flex; gap: 15px; overflow-x: auto; border-top: 1px solid #ddd; z-index: 10; flex-shrink: 0; }
-        .emoji-bar span { font-size: 24px; cursor: pointer; padding: 5px; }
+        #emoji-picker { display: none; background: #f0f2f5; padding: 10px; max-height: 250px; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(35px, 1fr)); gap: 10px; border-top: 1px solid #ddd; z-index: 10; flex-shrink: 0; }
+.emoji-item { font-size: 28px; cursor: pointer; text-align: center; transition: 0.1s; user-select: none; -webkit-tap-highlight-color: transparent; }
+.emoji-item:active { transform: scale(1.2); }
         
         .badge { background: #25D366; color: white; border-radius: 50%; min-width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; padding: 0 5px; }
     </style>
@@ -84,13 +85,14 @@
             <div id="typing-indicator">печатает...</div>
             <div id="messages-container"></div>
             
-            <div class="emoji-bar">
-                <span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😘')">😘</span><span onclick="addEmoji('🙏')">🙏</span><span onclick="addEmoji('🔥')">🔥</span>
-            </div>
+            <div id="emoji-picker"></div>
             
             <div class="input-bar">
                 <input type="file" id="img-upload" accept="image/*" style="display: none;" onchange="uploadImage(event)">
-                <label for="img-upload" style="font-size: 24px; cursor: pointer; padding: 0 10px;">📎</label>
+                <label for="img-upload" style="font-size: 24px; cursor: pointer; padding: 0 5px;">📎</label>
+                
+                <span id="emoji-btn" style="font-size: 26px; cursor: pointer; padding: 0 10px;" onclick="toggleEmojiPicker()">😀</span>
+                
                 <input type="text" id="msg-input" placeholder="Сообщение..." autocomplete="off">
                 <button class="send-btn" onclick="sendMsg()">➤</button>
             </div>
@@ -341,8 +343,40 @@ function cleanupOldMessages() {
             });
         });
     }
-    function addEmoji(e) { msgInput.value += e; msgInput.focus(); }
-    msgInput.onkeypress = (e) => { if(e.key==='Enter') sendMsg(); };
+    // Огромный массив всех основных смайлов
+    const allEmojis = ['😀','😃','😄','😁','😆','😅','😂','🤣','🥲','☺️','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🫀','🫁','🧠','🦷','🦴','👀','👁','👅','👄','💋','🩸','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷','🕸','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🦭','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔','🐾','🐉','🐲','🌵','🎄','🌲','🌳','🌴','🪵','🌱','🌿','☘️','🍀','🎍','🪴','🎋','🍃','🍂','🍁','🍄','🐚','🪨','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛','🌜','🌚','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌎','🌍','🌏','🪐','💫','⭐️','🌟','✨','⚡️','☄️','💥','🔥','🌪','🌈','☀️','🌤','⛅️','🌥','☁️','🌦','🌧','⛈','🌩','🌨','❄️','☃️','⛄️','🌬','💨','💧','💦','☔️','☂️','🌊','🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕️','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊','🥄','🍴','🍽','🥣','🥡','🥢','🧂'];
+
+    // Функция открытия/закрытия панели
+    function toggleEmojiPicker() {
+        const picker = document.getElementById('emoji-picker');
+        if (picker.style.display === 'grid') {
+            picker.style.display = 'none';
+        } else {
+            // Отрисовываем смайлы только при первом открытии (для экономии памяти)
+            if (picker.innerHTML === '') {
+                picker.innerHTML = allEmojis.map(e => `<div class="emoji-item" onclick="addEmoji('${e}')">${e}</div>`).join('');
+            }
+            picker.style.display = 'grid';
+        }
+    }
+
+    // Вставка смайла в текст
+    function addEmoji(e) { 
+        msgInput.value += e; 
+    }
+
+    // Закрываем панель смайлов, если пользователь нажал на поле ввода текста
+    msgInput.addEventListener('focus', () => {
+        document.getElementById('emoji-picker').style.display = 'none';
+    });
+
+    // Отправка по Enter
+    msgInput.onkeypress = (e) => { 
+        if(e.key==='Enter') {
+            sendMsg();
+            document.getElementById('emoji-picker').style.display = 'none';
+        }
+    };
     </script>
 </body>
 </html>
