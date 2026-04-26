@@ -162,7 +162,7 @@
         });
 
         if (error) {
-            errDiv.innerText = 'Неверная почта или пароль! Попробуйте еще раз.';
+            errDiv.innerText = 'Ошибка: ' + (error.message || 'Нет ответа от сервера');
             errDiv.style.display = 'block';
             btn.innerText = 'Войти';
             btn.disabled = false;
