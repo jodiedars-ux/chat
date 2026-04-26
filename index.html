@@ -193,7 +193,7 @@
         renderContacts();
         setTimeout(() => { if(Notification.permission==='default') Notification.requestPermission(); }, 3000);
         
-        db.ref('messages').on('child_added', (snap) => {
+        db.ref('messages').orderByChild('timestamp').limitToLast(150).on('child_added', (snap) => {
             const m = snap.val();
             allMessages.push(m);
             if (!isInitialLoad && m.receiver === myId && activeTarget !== m.sender) {
