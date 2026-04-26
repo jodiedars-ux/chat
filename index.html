@@ -6,7 +6,9 @@
     <title>Семейный Чат</title>
     
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%2300a884%22/><path d=%22M30 35h40v25H45L30 75V35z%22 fill=%22white%22/></svg>">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     
     <style>
         :root { --bg-color: #efeae2; --header-color: #f0f2f5; --my-msg: #dcf8c6; --their-msg: #ffffff; }
@@ -14,14 +16,13 @@
         
         html, body { margin: 0; padding: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #d1d7db; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* Скрыт по умолчанию, пока проверяем сессию */
         #login-screen { position: fixed; inset: 0; background: #f0f2f5; display: none; align-items: center; justify-content: center; z-index: 1000; }
         .login-card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 350px; }
         .login-btn { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 15px; margin-top: 10px; border-radius: 12px; border: none; background: #008069; color: white; cursor: pointer; font-size: 18px; font-weight: bold; width: 100%; transition: 0.2s; }
         .login-btn:active { background: #006b58; transform: scale(0.98); }
         .login-btn:disabled { background: #88c7bc; cursor: not-allowed; transform: none; }
         
-        .auth-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; }
+        .auth-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; text-transform: lowercase; }
         .auth-input:focus { border-color: #008069; }
 
         #app-screen { display: none; height: 100%; flex-direction: column; width: 100%; max-width: 600px; margin: 0 auto; background: white; }
@@ -59,12 +60,9 @@
     <div id="login-screen">
         <div class="login-card">
             <h2 style="margin-bottom: 20px; color: #008069;">Вход в чат</h2>
-            
-            <input type="email" id="auth-email" class="auth-input" placeholder="Почта (например, mama@...)">
+            <input type="text" id="auth-email" class="auth-input" placeholder="Логин (mama, papa, son)">
             <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль">
-            
             <button id="auth-submit-btn" class="login-btn" onclick="authLogin()">Войти</button>
-            
             <div id="auth-error" style="color: #e74c3c; font-size: 14px; margin-top: 15px; display: none;"></div>
         </div>
     </div>
@@ -98,21 +96,30 @@
     </div>
 
     <script>
-    const supabaseUrl = 'https://shiny-bar-b398.jodiedars.workers.dev';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaG51cmFiaWlicnJ2YmJxbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNDE5MjUsImV4cCI6MjA5MjcxNzkyNX0.Yi5RavtYjnvv9COAzY9ddBZvBObD3FNnCniTcDEz_84';
-    const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+    // === ВСТАВЬТЕ СЮДА ВАШИ ДАННЫЕ ИЗ FIREBASE CONSOLE ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0p9d7o99HZzqtf1KjhFT2_xkh3D0-3qY",
+      authDomain: "chat-dd013.firebaseapp.com",
+      databaseURL: "https://chat-dd013-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "chat-dd013",
+      storageBucket: "chat-dd013.firebasestorage.app",
+      messagingSenderId: "572123309303",
+      appId: "1:572123309303:web:89495490090b69b6589ff2"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    let myId = localStorage.getItem('family_chat_user'); // Храним роль прямо в браузере
+    let myId = localStorage.getItem('family_chat_user'); 
     let activeTarget = null;
     let onlineUsers = {}; 
-    let presenceChannel;
+    let allMessages = [];
     
-    let typingTimer, typingInterval, ghostBusterTimer;
+    let typingTimer, ghostBusterTimer;
     let isTypingNow = false; 
 
     const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
 
-    // Проверка входа (теперь через localStorage)
     function checkAuth() {
         if (myId && users[myId]) {
             showApp();
@@ -123,65 +130,45 @@
     
     checkAuth();
 
-    // Новый вход через обычную таблицу
     async function authLogin() {
-    const loginVal = document.getElementById('auth-email').value.trim();
-    const passVal = document.getElementById('auth-pass').value.trim();
-    const errDiv = document.getElementById('auth-error');
-    const btn = document.getElementById('auth-submit-btn');
-    
-    if (!loginVal || !passVal) {
-        errDiv.innerText = 'Введите логин и пароль';
-        errDiv.style.display = 'block';
-        return;
-    }
-
-    errDiv.style.display = 'none';
-    btn.innerText = 'Связь с базой...';
-    btn.disabled = true;
-
-    // Устанавливаем принудительный таймер на 10 секунд
-    const timeout = setTimeout(() => {
-        if (btn.disabled) {
-            errDiv.innerText = 'Ошибка: Провайдер сбросил соединение (таймаут)';
+        const loginVal = document.getElementById('auth-email').value.trim().toLowerCase();
+        const passVal = document.getElementById('auth-pass').value.trim();
+        const errDiv = document.getElementById('auth-error');
+        const btn = document.getElementById('auth-submit-btn');
+        
+        if (!loginVal || !passVal) {
+            errDiv.innerText = 'Введите логин и пароль';
             errDiv.style.display = 'block';
+            return;
+        }
+
+        errDiv.style.display = 'none';
+        btn.innerText = 'Связь с базой...';
+        btn.disabled = true;
+
+        try {
+            const snapshot = await db.ref('family_access/' + loginVal).once('value');
+            const userData = snapshot.val();
+
+            if (userData && userData.password === passVal) {
+                localStorage.setItem('family_chat_user', loginVal);
+                location.reload(); 
+            } else {
+                errDiv.innerText = 'Неверный логин или пароль';
+                errDiv.style.display = 'block';
+            }
+        } catch (e) {
+            errDiv.innerText = 'Ошибка сети: ' + e.message;
+            errDiv.style.display = 'block';
+        } finally {
             btn.innerText = 'Войти';
             btn.disabled = false;
         }
-    }, 10000);
-
-    try {
-        const { data, error } = await db
-            .from('family_access')
-            .select('role')
-            .eq('login', loginVal)
-            .eq('password', passVal)
-            .single();
-
-        clearTimeout(timeout);
-
-        if (error) {
-            errDiv.innerText = 'Ошибка базы: ' + error.message;
-            errDiv.style.display = 'block';
-        } else if (!data) {
-            errDiv.innerText = 'Неверный логин или пароль';
-            errDiv.style.display = 'block';
-        } else {
-            localStorage.setItem('family_chat_user', data.role);
-            location.reload(); 
-        }
-    } catch (e) {
-        clearTimeout(timeout);
-        errDiv.innerText = 'Критическая ошибка сети! Tele2 блокирует запрос.';
-        errDiv.style.display = 'block';
-    } finally {
-        btn.innerText = 'Войти';
-        btn.disabled = false;
     }
-}
 
     function logout() { 
         localStorage.removeItem('family_chat_user');
+        if(myId) db.ref('status/' + myId).remove();
         location.reload(); 
     }
 
@@ -202,54 +189,36 @@
         } catch(e) {}
     }
 
-    function askNotificationPermission() {
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-        }
-    }
-
-    function showNotification(title, text) {
-        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-            new Notification(title, { body: text, icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png' });
-        }
-    }
-
     function showApp() {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-screen').style.display = 'flex';
         
-        setTimeout(askNotificationPermission, 2000);
         renderContacts();
         
-        db.channel('chat-room').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-            const m = payload.new;
-            if (m.receiver === myId) {
-                playPopSound(); 
-                showNotification(users[m.sender].n, m.content); 
-                
-                if (activeTarget === m.sender) {
-                    renderMsg(m.content, 'received', m.created_at);
-                    
-                    clearTimeout(ghostBusterTimer);
-                    document.getElementById('typing-indicator').style.display = 'none';
-                    document.getElementById('header-status').innerText = 'в сети';
-                }
+        // Слушаем новые сообщения
+        db.ref('messages').on('child_added', (snapshot) => {
+            const m = snapshot.val();
+            allMessages.push(m);
+
+            if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
+                renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
             }
-        }).subscribe();
 
-        presenceChannel = db.channel('online-status', { config: { presence: { key: myId } } });
+            if (m.receiver === myId && m.sender !== activeTarget) {
+                playPopSound(); 
+            }
+        });
 
-        presenceChannel
-            .on('presence', { event: 'sync' }, () => {
-                onlineUsers = presenceChannel.presenceState();
-                updateStatusUI();
-                renderContacts();
-            })
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await presenceChannel.track({ is_typing_to: null, ts: Date.now() });
-                }
-            });
+        // Настройка статуса "в сети"
+        const myStatusRef = db.ref('status/' + myId);
+        myStatusRef.set({ online: true, typing_to: null });
+        myStatusRef.onDisconnect().remove();
+
+        db.ref('status').on('value', (snapshot) => {
+            onlineUsers = snapshot.val() || {};
+            updateStatusUI();
+            renderContacts();
+        });
     }
 
     function renderContacts() {
@@ -258,8 +227,8 @@
         for (let id in users) {
             if (id === myId) continue;
             
-            const userStateArray = onlineUsers[id]; 
-            const isOnline = !!userStateArray;
+            const userState = onlineUsers[id]; 
+            const isOnline = userState && userState.online;
             
             const statusColor = isOnline ? '#25D366' : '#bbb';
             const statusText = isOnline ? 'в сети' : 'был(а) недавно';
@@ -275,7 +244,7 @@
         }
     }
 
-    async function openChat(id) {
+    function openChat(id) {
         activeTarget = id;
         document.getElementById('contacts-list').style.display = 'none';
         document.getElementById('chat-window').style.display = 'flex';
@@ -286,16 +255,16 @@
         updateStatusUI();
 
         const cont = document.getElementById('messages-container');
-        cont.innerHTML = '<center style="color:#667781; font-size:12px; margin-top:20px;">Загрузка...</center>';
-
-        const { data } = await db.from('messages').select('*')
-            .or(`and(sender.eq.${myId},receiver.eq.${id}),and(sender.eq.${id},receiver.eq.${myId})`)
-            .order('created_at', { ascending: true });
-
         cont.innerHTML = '';
-        if (data) data.forEach(m => renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.created_at));
         
-        try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume(); } catch(e){}
+        // Отрисовка истории из памяти
+        allMessages.forEach(m => {
+            if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
+                renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
+            }
+        });
+        
+        cont.scrollTop = cont.scrollHeight;
     }
 
     function updateStatusUI() {
@@ -304,12 +273,10 @@
         
         if (!activeTarget || !statusEl) return;
 
-        const targetStates = onlineUsers[activeTarget];
+        const targetState = onlineUsers[activeTarget];
 
-        if (targetStates) {
-            const isTyping = targetStates.some(state => state.is_typing_to === myId);
-            
-            if (isTyping) {
+        if (targetState && targetState.online) {
+            if (targetState.typing_to === myId) {
                 typingEl.innerText = `${users[activeTarget].n} печатает...`;
                 typingEl.style.display = 'block';
                 statusEl.innerText = 'печатает...';
@@ -318,7 +285,7 @@
                 clearTimeout(ghostBusterTimer);
                 ghostBusterTimer = setTimeout(() => {
                     typingEl.style.display = 'none';
-                    if (onlineUsers[activeTarget]) {
+                    if (onlineUsers[activeTarget] && onlineUsers[activeTarget].online) {
                         statusEl.innerText = 'в сети';
                         statusEl.style.color = '#00a884';
                     }
@@ -356,17 +323,12 @@
         
         if (!isTypingNow) {
             isTypingNow = true;
-            presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
-            
-            typingInterval = setInterval(() => {
-                presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
-            }, 2500);
+            db.ref('status/' + myId).update({ typing_to: activeTarget });
         }
         
         typingTimer = setTimeout(() => {
             isTypingNow = false;
-            clearInterval(typingInterval);
-            presenceChannel.track({ is_typing_to: null, ts: Date.now() });
+            db.ref('status/' + myId).update({ typing_to: null });
         }, 1500);
     });
 
@@ -376,20 +338,23 @@
         if (!val || !activeTarget) return;
 
         clearTimeout(typingTimer);
-        clearInterval(typingInterval);
         isTypingNow = false;
+        db.ref('status/' + myId).update({ typing_to: null });
         
-        presenceChannel.track({ is_typing_to: null, ts: Date.now() });
-        
-        renderMsg(val, 'sent', new Date().toISOString());
         inp.value = '';
 
-        await db.from('messages').insert([{ sender: myId, receiver: activeTarget, content: val }]);
+        await db.ref('messages').push({ 
+            sender: myId, 
+            receiver: activeTarget, 
+            content: val,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
     }
 
     function renderMsg(text, type, time) {
         const cont = document.getElementById('messages-container');
-        const t = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dateObj = time ? new Date(time) : new Date();
+        const t = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const div = document.createElement('div');
         div.className = `msg ${type}`;
         div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
