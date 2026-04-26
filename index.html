@@ -14,10 +14,15 @@
         
         html, body { margin: 0; padding: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #d1d7db; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
         
-        #login-screen { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        /* Скрыт по умолчанию, пока проверяем сессию */
+        #login-screen { position: fixed; inset: 0; background: #f0f2f5; display: none; align-items: center; justify-content: center; z-index: 1000; }
         .login-card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 350px; }
-        .login-btn { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 15px; margin-top: 10px; border-radius: 12px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 18px; width: 100%; transition: 0.2s; }
-        .login-btn:active { background: #e9edef; transform: scale(0.98); }
+        .login-btn { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 15px; margin-top: 10px; border-radius: 12px; border: none; background: #008069; color: white; cursor: pointer; font-size: 18px; font-weight: bold; width: 100%; transition: 0.2s; }
+        .login-btn:active { background: #006b58; transform: scale(0.98); }
+        .login-btn:disabled { background: #88c7bc; cursor: not-allowed; transform: none; }
+        
+        .auth-input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; }
+        .auth-input:focus { border-color: #008069; }
 
         #app-screen { display: none; height: 100%; flex-direction: column; width: 100%; max-width: 600px; margin: 0 auto; background: white; }
         
@@ -32,7 +37,6 @@
         #chat-window { display: none; flex: 1; flex-direction: column; background: var(--bg-color); position: relative; overflow: hidden; }
         #chat-window::before { content: ""; position: absolute; inset: 0; background-image: url('https://web.whatsapp.com/img/bg-chat-tile-dark_a4be512e7195b6b733d9110b408f075d.png'); opacity: 0.05; }
         
-        /* Плашка "печатает..." */
         #typing-indicator { position: absolute; top: 0; left: 0; width: 100%; background: rgba(255,255,255,0.9); padding: 5px 20px; font-size: 13px; color: #008069; font-weight: 500; z-index: 5; display: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 
         #messages-container { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; z-index: 1; }
@@ -54,10 +58,14 @@
 
     <div id="login-screen">
         <div class="login-card">
-            <h2 style="margin-bottom: 20px; color: #008069;">Кто вы?</h2>
-            <button class="login-btn" onclick="login('mama')">👩 Мама</button>
-            <button class="login-btn" onclick="login('papa')">👨 Папа</button>
-            <button class="login-btn" onclick="login('son')">👦 Сын</button>
+            <h2 style="margin-bottom: 20px; color: #008069;">Вход в чат</h2>
+            
+            <input type="email" id="auth-email" class="auth-input" placeholder="Почта (например, mama@...)">
+            <input type="password" id="auth-pass" class="auth-input" placeholder="Пароль">
+            
+            <button id="auth-submit-btn" class="login-btn" onclick="authLogin()">Войти</button>
+            
+            <div id="auth-error" style="color: #e74c3c; font-size: 14px; margin-top: 15px; display: none;"></div>
         </div>
     </div>
 
@@ -69,7 +77,7 @@
                 <b id="header-name">Семейный Чат</b><br>
                 <small id="header-status" style="color: #667781;">в сети</small>
             </div>
-            <button onclick="logout()" style="background:none; border:none; color:#008069; font-size:12px;">Выйти</button>
+            <button onclick="logout()" style="background:none; border:none; color:#e74c3c; font-size:14px; font-weight:bold; cursor:pointer;">Выйти</button>
         </header>
 
         <div id="contacts-list"></div>
@@ -90,16 +98,15 @@
     </div>
 
     <script>
-       const supabaseUrl = 'https://afhnurabiibrrvbbqnvq.supabase.co';
+    const supabaseUrl = 'https://afhnurabiibrrvbbqnvq.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaG51cmFiaWlicnJ2YmJxbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNDE5MjUsImV4cCI6MjA5MjcxNzkyNX0.Yi5RavtYjnvv9COAzY9ddBZvBObD3FNnCniTcDEz_84';
     const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-    let myId = localStorage.getItem('family_uid');
+    let myId = null;
     let activeTarget = null;
     let onlineUsers = {}; 
     let presenceChannel;
     
-    // Переменные для бронебойной логики печатания
     let typingTimer;
     let typingInterval;
     let ghostBusterTimer;
@@ -107,10 +114,71 @@
 
     const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
 
-    if (myId) showApp();
+    // === НОВАЯ ЛОГИКА АВТОРИЗАЦИИ ===
+    
+    // Проверяем, заходил ли человек ранее
+    async function checkAuth() {
+        const { data: { session } } = await db.auth.getSession();
+        
+        if (session) {
+            // Магия: определяем кто это по почте!
+            const email = session.user.email.toLowerCase();
+            if (email.includes('mama')) myId = 'mama';
+            else if (email.includes('papa')) myId = 'papa';
+            else if (email.includes('son')) myId = 'son';
+            else myId = email.split('@')[0]; // Запасной вариант
+            
+            showApp();
+        } else {
+            // Если нет сессии — показываем форму логина
+            document.getElementById('login-screen').style.display = 'flex';
+        }
+    }
+    
+    // Запускаем проверку сразу при открытии сайта
+    checkAuth();
 
-    function login(id) { localStorage.setItem('family_uid', id); location.reload(); }
-    function logout() { localStorage.removeItem('family_uid'); location.reload(); }
+    // Функция входа по кнопке
+    async function authLogin() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-pass').value.trim();
+        const errDiv = document.getElementById('auth-error');
+        const btn = document.getElementById('auth-submit-btn');
+        
+        if (!email || !password) {
+            errDiv.innerText = 'Пожалуйста, введите почту и пароль';
+            errDiv.style.display = 'block';
+            return;
+        }
+
+        errDiv.style.display = 'none';
+        btn.innerText = 'Проверка...';
+        btn.disabled = true;
+        
+        // Стучимся в Supabase
+        const { data, error } = await db.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+
+        if (error) {
+            errDiv.innerText = 'Неверная почта или пароль! Попробуйте еще раз.';
+            errDiv.style.display = 'block';
+            btn.innerText = 'Войти';
+            btn.disabled = false;
+        } else {
+            // Вход успешен! Перезагружаем страницу, чтобы checkAuth подхватил сессию
+            location.reload(); 
+        }
+    }
+
+    // Правильный выход из системы
+    async function logout() { 
+        await db.auth.signOut();
+        location.reload(); 
+    }
+
+    // === КОНЕЦ ЛОГИКИ АВТОРИЗАЦИИ ===
 
     function playPopSound() {
         try {
@@ -148,7 +216,6 @@
         setTimeout(askNotificationPermission, 2000);
         renderContacts();
         
-        // Получение сообщений
         db.channel('chat-room').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
             const m = payload.new;
             if (m.receiver === myId) {
@@ -158,7 +225,6 @@
                 if (activeTarget === m.sender) {
                     renderMsg(m.content, 'received', m.created_at);
                     
-                    // БЕЗУСЛОВНЫЙ СБРОС: Сообщение пришло -> значит точно перестал печатать!
                     clearTimeout(ghostBusterTimer);
                     document.getElementById('typing-indicator').style.display = 'none';
                     document.getElementById('header-status').innerText = 'в сети';
@@ -166,7 +232,6 @@
             }
         }).subscribe();
 
-        // Подключение к сети
         presenceChannel = db.channel('online-status', { config: { presence: { key: myId } } });
 
         presenceChannel
@@ -245,7 +310,6 @@
                 statusEl.innerText = 'печатает...';
                 statusEl.style.color = '#008069';
 
-                // ЗАЩИТА ОТ "ПРИЗРАКОВ": принудительно убиваем статус через 4 секунды
                 clearTimeout(ghostBusterTimer);
                 ghostBusterTimer = setTimeout(() => {
                     typingEl.style.display = 'none';
@@ -278,27 +342,22 @@
         document.getElementById('header-avatar').innerText = '👤';
     }
 
-    // === УМНАЯ ЛОГИКА "ПЕЧАТАЕТ..." ===
     const msgInput = document.getElementById('msg-input');
 
     msgInput.addEventListener('input', () => {
         if (!activeTarget) return;
         
-        // Сбрасываем таймер "тишины" при каждом нажатии
         clearTimeout(typingTimer);
         
         if (!isTypingNow) {
             isTypingNow = true;
-            // Уникальный ts (таймстамп) заставляет базу обновить статус
             presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
             
-            // "Пульс": повторяем сигнал, пока активно печатаем
             typingInterval = setInterval(() => {
                 presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
             }, 2500);
         }
         
-        // Если тишина 1.5 секунды - значит остановился
         typingTimer = setTimeout(() => {
             isTypingNow = false;
             clearInterval(typingInterval);
@@ -311,12 +370,10 @@
         const val = inp.value.trim();
         if (!val || !activeTarget) return;
 
-        // МГНОВЕННО чистим таймеры и поле перед отправкой
         clearTimeout(typingTimer);
         clearInterval(typingInterval);
         isTypingNow = false;
         
-        // Визуально сбрасываем статус "печатает" у себя
         presenceChannel.track({ is_typing_to: null, ts: Date.now() });
         
         renderMsg(val, 'sent', new Date().toISOString());
