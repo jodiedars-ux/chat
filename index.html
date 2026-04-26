@@ -162,14 +162,12 @@
         });
 
         if (error) {
-            errDiv.innerText = 'Ошибка: ' + (error.message || 'Нет ответа от сервера');
-            errDiv.style.display = 'block';
-            btn.innerText = 'Войти';
-            btn.disabled = false;
-        } else {
-            // Вход успешен! Перезагружаем страницу, чтобы checkAuth подхватил сессию
-            location.reload(); 
-        }
+    console.error(error); // Поможет при отладке
+    errDiv.innerText = 'Ошибка: ' + (error.message || 'Нет ответа от сервера (проверьте интернет)');
+    errDiv.style.display = 'block';
+    btn.innerText = 'Войти';
+    btn.disabled = false;
+}
     }
 
     // Правильный выход из системы
