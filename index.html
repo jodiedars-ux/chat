@@ -186,6 +186,10 @@
     function showApp() {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-screen').style.display = 'flex';
+        
+        // --- ЗАПУСКАЕМ ОЧИСТКУ СТАРЫХ СООБЩЕНИЙ ---
+        cleanupOldMessages();
+        
         renderContacts();
         setTimeout(() => { if(Notification.permission==='default') Notification.requestPermission(); }, 3000);
         
@@ -297,7 +301,19 @@
         else div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
         cont.appendChild(div); cont.scrollTop = cont.scrollHeight;
     }
+function cleanupOldMessages() {
+        // Вычисляем время, которое было ровно 7 дней назад
+        const DAYS_MS = 3 * 24 * 60 * 60 * 1000; 
+        const cutoffTime = Date.now() - DAYS_MS;
 
+        // Ищем в базе все сообщения, время которых меньше (старше), чем наш лимит
+        db.ref('messages').orderByChild('timestamp').endAt(cutoffTime).once('value', (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                // Удаляем найденное старое сообщение
+                childSnapshot.ref.remove(); 
+            });
+        });
+    }
     function addEmoji(e) { msgInput.value += e; msgInput.focus(); }
     msgInput.onkeypress = (e) => { if(e.key==='Enter') sendMsg(); };
     </script>
