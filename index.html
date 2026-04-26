@@ -102,51 +102,36 @@
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaG51cmFiaWlicnJ2YmJxbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNDE5MjUsImV4cCI6MjA5MjcxNzkyNX0.Yi5RavtYjnvv9COAzY9ddBZvBObD3FNnCniTcDEz_84';
     const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-    let myId = null;
+    let myId = localStorage.getItem('family_chat_user'); // Храним роль прямо в браузере
     let activeTarget = null;
     let onlineUsers = {}; 
     let presenceChannel;
     
-    let typingTimer;
-    let typingInterval;
-    let ghostBusterTimer;
+    let typingTimer, typingInterval, ghostBusterTimer;
     let isTypingNow = false; 
 
     const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
 
-    // === НОВАЯ ЛОГИКА АВТОРИЗАЦИИ ===
-    
-    // Проверяем, заходил ли человек ранее
-    async function checkAuth() {
-        const { data: { session } } = await db.auth.getSession();
-        
-        if (session) {
-            // Магия: определяем кто это по почте!
-            const email = session.user.email.toLowerCase();
-            if (email.includes('mama')) myId = 'mama';
-            else if (email.includes('papa')) myId = 'papa';
-            else if (email.includes('son')) myId = 'son';
-            else myId = email.split('@')[0]; // Запасной вариант
-            
+    // Проверка входа (теперь через localStorage)
+    function checkAuth() {
+        if (myId && users[myId]) {
             showApp();
         } else {
-            // Если нет сессии — показываем форму логина
             document.getElementById('login-screen').style.display = 'flex';
         }
     }
     
-    // Запускаем проверку сразу при открытии сайта
     checkAuth();
 
-    // Функция входа по кнопке
+    // Новый вход через обычную таблицу
     async function authLogin() {
-        const email = document.getElementById('auth-email').value.trim();
-        const password = document.getElementById('auth-pass').value.trim();
+        const loginVal = document.getElementById('auth-email').value.trim();
+        const passVal = document.getElementById('auth-pass').value.trim();
         const errDiv = document.getElementById('auth-error');
         const btn = document.getElementById('auth-submit-btn');
         
-        if (!email || !password) {
-            errDiv.innerText = 'Пожалуйста, введите почту и пароль';
+        if (!loginVal || !passVal) {
+            errDiv.innerText = 'Введите логин и пароль';
             errDiv.style.display = 'block';
             return;
         }
@@ -154,29 +139,31 @@
         errDiv.style.display = 'none';
         btn.innerText = 'Проверка...';
         btn.disabled = true;
-        
-        // Стучимся в Supabase
-        const { data, error } = await db.auth.signInWithPassword({
-            email: email,
-            password: password
-        });
 
-        if (error) {
-    console.error(error); // Поможет при отладке
-    errDiv.innerText = 'Ошибка: ' + (error.message || 'Нет ответа от сервера (проверьте интернет)');
-    errDiv.style.display = 'block';
-    btn.innerText = 'Войти';
-    btn.disabled = false;
-}
+        // Ищем пользователя в нашей новой таблице
+        const { data, error } = await db
+            .from('family_access')
+            .select('role')
+            .eq('login', loginVal)
+            .eq('password', passVal)
+            .single();
+
+        if (error || !data) {
+            errDiv.innerText = 'Ошибка: неверный логин или доступ заблокирован';
+            errDiv.style.display = 'block';
+            btn.innerText = 'Войти';
+            btn.disabled = false;
+        } else {
+            // Успех! Сохраняем роль и заходим
+            localStorage.setItem('family_chat_user', data.role);
+            location.reload(); 
+        }
     }
 
-    // Правильный выход из системы
-    async function logout() { 
-        await db.auth.signOut();
+    function logout() { 
+        localStorage.removeItem('family_chat_user');
         location.reload(); 
     }
-
-    // === КОНЕЦ ЛОГИКИ АВТОРИЗАЦИИ ===
 
     function playPopSound() {
         try {
