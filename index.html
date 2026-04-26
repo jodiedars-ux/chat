@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Семейный Чат</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%2300a884%22/><path d=%22M30 35h40v25H45L30 75V35z%22 fill=%22white%22/></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root { --bg-color: #efeae2; --header-color: #f0f2f5; --my-msg: #dcf8c6; --their-msg: #ffffff; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        html, body { margin: 0; padding: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #d1d7db; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        #login-screen { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 350px; }
+        .login-btn { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 15px; margin-top: 10px; border-radius: 12px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 18px; width: 100%; transition: 0.2s; }
+        .login-btn:active { background: #e9edef; transform: scale(0.98); }
+
+        #app-screen { display: none; height: 100%; flex-direction: column; width: 100%; max-width: 600px; margin: 0 auto; background: white; }
+        
+        header { background: var(--header-color); padding: 10px 16px; display: flex; align-items: center; border-bottom: 1px solid #d1d7db; gap: 12px; height: 60px; flex-shrink: 0; }
+        .back-btn { font-size: 24px; cursor: pointer; display: none; padding-right: 5px; }
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: #dfe5e7; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: 0.3s; }
+        
+        #contacts-list { flex: 1; overflow-y: auto; background: white; }
+        .contact-item { padding: 15px 20px; border-bottom: 1px solid #f2f2f2; display: flex; align-items: center; gap: 15px; cursor: pointer; }
+        .contact-item:active { background: #f0f2f5; }
+        
+        #chat-window { display: none; flex: 1; flex-direction: column; background: var(--bg-color); position: relative; overflow: hidden; }
+        #chat-window::before { content: ""; position: absolute; inset: 0; background-image: url('https://web.whatsapp.com/img/bg-chat-tile-dark_a4be512e7195b6b733d9110b408f075d.png'); opacity: 0.05; }
+        
+        /* Плашка "печатает..." */
+        #typing-indicator { position: absolute; top: 0; left: 0; width: 100%; background: rgba(255,255,255,0.9); padding: 5px 20px; font-size: 13px; color: #008069; font-weight: 500; z-index: 5; display: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+        #messages-container { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; z-index: 1; }
+        .msg { max-width: 80%; padding: 8px 12px; border-radius: 8px; font-size: 15px; position: relative; box-shadow: 0 1px 1px rgba(0,0,0,0.1); line-height: 1.4; word-wrap: break-word; }
+        .msg.sent { background: var(--my-msg); align-self: flex-end; border-top-right-radius: 0; }
+        .msg.received { background: var(--their-msg); align-self: flex-start; border-top-left-radius: 0; }
+        .msg-time { font-size: 10px; color: #667781; margin-top: 4px; text-align: right; display: block; }
+
+        .input-bar { background: #f0f2f5; padding: 8px 12px; display: flex; align-items: center; gap: 8px; z-index: 10; flex-shrink: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+        #msg-input { flex: 1; padding: 10px 15px; border: none; border-radius: 20px; font-size: 16px; outline: none; }
+        .send-btn { background: #008069; color: white; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; transition: 0.2s; }
+        .send-btn:active { transform: scale(0.9); }
+        
+        .emoji-bar { background: #f0f2f5; padding: 5px 10px; display: flex; gap: 15px; overflow-x: auto; border-top: 1px solid #ddd; z-index: 10; flex-shrink: 0; }
+        .emoji-bar span { font-size: 24px; cursor: pointer; padding: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-card">
+            <h2 style="margin-bottom: 20px; color: #008069;">Кто вы?</h2>
+            <button class="login-btn" onclick="login('mama')">👩 Мама</button>
+            <button class="login-btn" onclick="login('papa')">👨 Папа</button>
+            <button class="login-btn" onclick="login('son')">👦 Сын</button>
+        </div>
+    </div>
+
+    <div id="app-screen">
+        <header>
+            <div class="back-btn" id="back-btn" onclick="closeChat()">←</div>
+            <div class="avatar" id="header-avatar">👤</div>
+            <div style="flex:1">
+                <b id="header-name">Семейный Чат</b><br>
+                <small id="header-status" style="color: #667781;">в сети</small>
+            </div>
+            <button onclick="logout()" style="background:none; border:none; color:#008069; font-size:12px;">Выйти</button>
+        </header>
+
+        <div id="contacts-list"></div>
+
+        <div id="chat-window">
+            <div id="typing-indicator">печатает...</div>
+            <div id="messages-container"></div>
+            
+            <div class="emoji-bar">
+                <span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😘')">😘</span><span onclick="addEmoji('🙏')">🙏</span><span onclick="addEmoji('🔥')">🔥</span>
+            </div>
+            
+            <div class="input-bar">
+                <input type="text" id="msg-input" placeholder="Сообщение..." autocomplete="off">
+                <button class="send-btn" onclick="sendMsg()">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+       const supabaseUrl = 'https://afhnurabiibrrvbbqnvq.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmaG51cmFiaWlicnJ2YmJxbnZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxNDE5MjUsImV4cCI6MjA5MjcxNzkyNX0.Yi5RavtYjnvv9COAzY9ddBZvBObD3FNnCniTcDEz_84';
+    const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    let myId = localStorage.getItem('family_uid');
+    let activeTarget = null;
+    let onlineUsers = {}; 
+    let presenceChannel;
+    
+    // Переменные для бронебойной логики печатания
+    let typingTimer;
+    let typingInterval;
+    let ghostBusterTimer;
+    let isTypingNow = false; 
+
+    const users = { 'mama': {n:'Мама', i:'👩'}, 'papa': {n:'Папа', i:'👨'}, 'son': {n:'Сын', i:'👦'} };
+
+    if (myId) showApp();
+
+    function login(id) { localStorage.setItem('family_uid', id); location.reload(); }
+    function logout() { localStorage.removeItem('family_uid'); location.reload(); }
+
+    function playPopSound() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.5, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        } catch(e) {}
+    }
+
+    function askNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }
+
+    function showNotification(title, text) {
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { body: text, icon: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png' });
+        }
+    }
+
+    function showApp() {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-screen').style.display = 'flex';
+        
+        setTimeout(askNotificationPermission, 2000);
+        renderContacts();
+        
+        // Получение сообщений
+        db.channel('chat-room').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+            const m = payload.new;
+            if (m.receiver === myId) {
+                playPopSound(); 
+                showNotification(users[m.sender].n, m.content); 
+                
+                if (activeTarget === m.sender) {
+                    renderMsg(m.content, 'received', m.created_at);
+                    
+                    // БЕЗУСЛОВНЫЙ СБРОС: Сообщение пришло -> значит точно перестал печатать!
+                    clearTimeout(ghostBusterTimer);
+                    document.getElementById('typing-indicator').style.display = 'none';
+                    document.getElementById('header-status').innerText = 'в сети';
+                }
+            }
+        }).subscribe();
+
+        // Подключение к сети
+        presenceChannel = db.channel('online-status', { config: { presence: { key: myId } } });
+
+        presenceChannel
+            .on('presence', { event: 'sync' }, () => {
+                onlineUsers = presenceChannel.presenceState();
+                updateStatusUI();
+                renderContacts();
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await presenceChannel.track({ is_typing_to: null, ts: Date.now() });
+                }
+            });
+    }
+
+    function renderContacts() {
+        const list = document.getElementById('contacts-list');
+        list.innerHTML = '';
+        for (let id in users) {
+            if (id === myId) continue;
+            
+            const userStateArray = onlineUsers[id]; 
+            const isOnline = !!userStateArray;
+            
+            const statusColor = isOnline ? '#25D366' : '#bbb';
+            const statusText = isOnline ? 'в сети' : 'был(а) недавно';
+
+            list.innerHTML += `
+                <div class="contact-item" onclick="openChat('${id}')">
+                    <div class="avatar" style="border: 2px solid ${statusColor}">${users[id].i}</div>
+                    <div class="contact-info">
+                        <b>${users[id].n}</b><br>
+                        <small style="color:${statusColor}">${statusText}</small>
+                    </div>
+                </div>`;
+        }
+    }
+
+    async function openChat(id) {
+        activeTarget = id;
+        document.getElementById('contacts-list').style.display = 'none';
+        document.getElementById('chat-window').style.display = 'flex';
+        document.getElementById('back-btn').style.display = 'block';
+        document.getElementById('header-name').innerText = users[id].n;
+        document.getElementById('header-avatar').innerText = users[id].i;
+        
+        updateStatusUI();
+
+        const cont = document.getElementById('messages-container');
+        cont.innerHTML = '<center style="color:#667781; font-size:12px; margin-top:20px;">Загрузка...</center>';
+
+        const { data } = await db.from('messages').select('*')
+            .or(`and(sender.eq.${myId},receiver.eq.${id}),and(sender.eq.${id},receiver.eq.${myId})`)
+            .order('created_at', { ascending: true });
+
+        cont.innerHTML = '';
+        if (data) data.forEach(m => renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.created_at));
+        
+        try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume(); } catch(e){}
+    }
+
+    function updateStatusUI() {
+        const statusEl = document.getElementById('header-status');
+        const typingEl = document.getElementById('typing-indicator');
+        
+        if (!activeTarget || !statusEl) return;
+
+        const targetStates = onlineUsers[activeTarget];
+
+        if (targetStates) {
+            const isTyping = targetStates.some(state => state.is_typing_to === myId);
+            
+            if (isTyping) {
+                typingEl.innerText = `${users[activeTarget].n} печатает...`;
+                typingEl.style.display = 'block';
+                statusEl.innerText = 'печатает...';
+                statusEl.style.color = '#008069';
+
+                // ЗАЩИТА ОТ "ПРИЗРАКОВ": принудительно убиваем статус через 4 секунды
+                clearTimeout(ghostBusterTimer);
+                ghostBusterTimer = setTimeout(() => {
+                    typingEl.style.display = 'none';
+                    if (onlineUsers[activeTarget]) {
+                        statusEl.innerText = 'в сети';
+                        statusEl.style.color = '#00a884';
+                    }
+                }, 4000);
+
+            } else {
+                clearTimeout(ghostBusterTimer);
+                typingEl.style.display = 'none';
+                statusEl.innerText = 'в сети';
+                statusEl.style.color = '#00a884';
+            }
+        } else {
+            clearTimeout(ghostBusterTimer);
+            typingEl.style.display = 'none';
+            statusEl.innerText = 'не в сети';
+            statusEl.style.color = '#667781';
+        }
+    }
+
+    function closeChat() {
+        activeTarget = null;
+        document.getElementById('contacts-list').style.display = 'block';
+        document.getElementById('chat-window').style.display = 'none';
+        document.getElementById('back-btn').style.display = 'none';
+        document.getElementById('header-name').innerText = 'Семейный Чат';
+        document.getElementById('header-avatar').innerText = '👤';
+    }
+
+    // === УМНАЯ ЛОГИКА "ПЕЧАТАЕТ..." ===
+    const msgInput = document.getElementById('msg-input');
+
+    msgInput.addEventListener('input', () => {
+        if (!activeTarget) return;
+        
+        // Сбрасываем таймер "тишины" при каждом нажатии
+        clearTimeout(typingTimer);
+        
+        if (!isTypingNow) {
+            isTypingNow = true;
+            // Уникальный ts (таймстамп) заставляет базу обновить статус
+            presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
+            
+            // "Пульс": повторяем сигнал, пока активно печатаем
+            typingInterval = setInterval(() => {
+                presenceChannel.track({ is_typing_to: activeTarget, ts: Date.now() });
+            }, 2500);
+        }
+        
+        // Если тишина 1.5 секунды - значит остановился
+        typingTimer = setTimeout(() => {
+            isTypingNow = false;
+            clearInterval(typingInterval);
+            presenceChannel.track({ is_typing_to: null, ts: Date.now() });
+        }, 1500);
+    });
+
+    async function sendMsg() {
+        const inp = document.getElementById('msg-input');
+        const val = inp.value.trim();
+        if (!val || !activeTarget) return;
+
+        // МГНОВЕННО чистим таймеры и поле перед отправкой
+        clearTimeout(typingTimer);
+        clearInterval(typingInterval);
+        isTypingNow = false;
+        
+        // Визуально сбрасываем статус "печатает" у себя
+        presenceChannel.track({ is_typing_to: null, ts: Date.now() });
+        
+        renderMsg(val, 'sent', new Date().toISOString());
+        inp.value = '';
+
+        await db.from('messages').insert([{ sender: myId, receiver: activeTarget, content: val }]);
+    }
+
+    function renderMsg(text, type, time) {
+        const cont = document.getElementById('messages-container');
+        const t = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
+        cont.appendChild(div);
+        cont.scrollTop = cont.scrollHeight;
+    }
+
+    function addEmoji(e) { 
+        const inp = document.getElementById('msg-input');
+        inp.value += e;
+        inp.focus();
+        inp.dispatchEvent(new Event('input')); 
+    }
+
+    msgInput.onkeypress = (e) => { if(e.key==='Enter') sendMsg(); };
+    </script>
+</body>
+</html>
