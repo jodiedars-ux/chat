@@ -358,16 +358,26 @@
         cont.scrollTop = cont.scrollHeight;
     }
 function cleanupOldMessages() {
-        // Вычисляем время, которое было ровно 7 дней назад
-        const DAYS_MS = 3 * 24 * 60 * 60 * 1000; 
-        const cutoffTime = Date.now() - DAYS_MS;
+        // Укажите, сколько всего сообщений (на весь чат) нужно хранить
+        const KEEP_COUNT = 50; 
 
-        // Ищем в базе все сообщения, время которых меньше (старше), чем наш лимит
-        db.ref('messages').orderByChild('timestamp').endAt(cutoffTime).once('value', (snapshot) => {
-            snapshot.forEach((childSnapshot) => {
-                // Удаляем найденное старое сообщение
-                childSnapshot.ref.remove(); 
-            });
+        // Запрашиваем базу
+        db.ref('messages').orderByChild('timestamp').once('value', (snapshot) => {
+            const totalMessages = snapshot.numChildren();
+            
+            // Если накопилось больше сообщений, чем наш лимит
+            if (totalMessages > KEEP_COUNT) {
+                let messagesToDelete = totalMessages - KEEP_COUNT;
+                let count = 0;
+                
+                // Firebase отдает сообщения по порядку: от старых к новым
+                snapshot.forEach((childSnapshot) => {
+                    if (count < messagesToDelete) {
+                        childSnapshot.ref.remove(); // Удаляем самое старое
+                        count++;
+                    }
+                });
+            }
         });
     }
     // Огромный массив всех основных смайлов
