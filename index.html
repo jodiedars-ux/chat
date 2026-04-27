@@ -226,19 +226,27 @@
     function renderContacts() {
         const list = document.getElementById('contacts-list');
         list.innerHTML = '';
+        
+        // Жестко считываем наш логин прямо из памяти при каждой отрисовке
+        const currentMyId = localStorage.getItem('family_chat_user'); 
+        
         for (let id in users) {
-            if (id === myId) continue;
+            // Если это мы — 100% пропускаем и не рисуем
+            if (id === currentMyId) continue; 
+            
             const isOnline = onlineUsers[id] && onlineUsers[id].online;
-            const hasNew = hasUnread[id]; // Проверяем, есть ли новые
+            const hasNew = hasUnread[id]; 
             const statusColor = isOnline ? '#25D366' : '#bbb';
             
-            // Рисуем аккуратную зеленую точку (без цифр), если есть новые сообщения
             const badgeHtml = hasNew ? `<div style="width: 12px; height: 12px; background: #25D366; border-radius: 50%; margin-right: 5px;"></div>` : '';
             
             list.innerHTML += `
                 <div class="contact-item" onclick="openChat('${id}')">
                     <div class="avatar" style="border: 2px solid ${statusColor}">${users[id].i}</div>
-                    <div style="flex: 1;"><b>${users[id].n}</b><br><small style="color:${statusColor}">${isOnline ? 'в сети' : 'был(а) недавно'}</small></div>
+                    <div style="flex: 1;">
+                        <b>${users[id].n}</b><br>
+                        <small style="color:${statusColor}">${isOnline ? 'в сети' : 'был(а) недавно'}</small>
+                    </div>
                     ${badgeHtml}
                 </div>`;
         }
