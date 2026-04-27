@@ -179,6 +179,21 @@
             osc.start(); osc.stop(audioCtx.currentTime + 0.1);
         } catch(e){}
     }
+	
+    function playSoftTapSound() {
+        try {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'sine'; // Делает звук круглым и мягким
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime); // Звучит ниже
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.05); // Очень короткий
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Тише в 3 раза
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+        } catch(e){}
+    }
 
     function showNotification(title, text) {
         if (Notification.permission === 'granted') {
@@ -200,20 +215,28 @@
 
         msgsRef.on('child_added', (snap) => {
             const m = snap.val();
-            m.key = snap.key; // Сохраняем ключ для галочек
+            m.key = snap.key; 
             allMessages.push(m);
             
-            // Если я ПРЯМО СЕЙЧАС смотрю в чат с этим человеком - сразу помечаем прочитанным
+            // Если я ПРЯМО СЕЙЧАС смотрю в чат с этим человеком - помечаем прочитанным
             if (initialDataLoaded && m.receiver === myId && activeTarget === m.sender) {
                 snap.ref.update({ read: true });
             }
 
+            // Если чат ЗАКРЫТ - громкий звук и уведомление на телефон
             if (initialDataLoaded && m.receiver === myId && activeTarget !== m.sender) {
                 hasUnread[m.sender] = true;
                 renderContacts(); playPopSound(); showNotification(users[m.sender].n, m.content);
             }
+            
+            // Отрисовка сообщения внутри разговора
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
-                renderMsg(m, m.sender === myId ? 'sent' : 'received'); // Передаем объект m
+                renderMsg(m, m.sender === myId ? 'sent' : 'received');
+                
+                // ЕСЛИ ЧАТ ОТКРЫТ И ПРИШЛО НОВОЕ СООБЩЕНИЕ МНЕ - ИГРАЕМ МЯГКИЙ ЗВУК
+                if (initialDataLoaded && m.receiver === myId && m.sender === activeTarget) {
+                    playSoftTapSound();
+                }
             }
         });
 
