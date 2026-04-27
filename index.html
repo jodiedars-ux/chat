@@ -498,6 +498,7 @@ function cleanupOldMessages() {
     // Вставка смайла в текст
     function addEmoji(e) { 
         msgInput.value += e; 
+        msgInput.dispatchEvent(new Event('input'));
     }
 
     // Закрываем панель смайлов, если пользователь нажал на поле ввода текста
