@@ -87,7 +87,7 @@
             
             <div id="emoji-picker"></div>
             
-            <div class="input-bar">
+           <div class="input-bar">
                 <input type="file" id="img-upload" accept="image/*" style="display: none;" onchange="uploadImage(event)">
                 <label for="img-upload" style="font-size: 24px; cursor: pointer; padding: 0 5px;">📎</label>
                 
@@ -419,11 +419,25 @@ function cleanupOldMessages() {
         });
     }
 
-    // Подстраховка: при клике в поле ввода пытаемся прокрутить экран до него
-    msgInput.addEventListener('focus', () => {
-        setTimeout(() => {
-            document.querySelector('.input-bar').scrollIntoView({ behavior: 'smooth', block: 'end' });
-        }, 300);
+    msgInput.addEventListener('input', () => {
+        // --- ТЕ САМЫЕ СТРОКИ ДЛЯ АВТОРАСШИРЕНИЯ ---
+        msgInput.style.height = 'auto';
+        msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+        // ------------------------------------------
+
+        if (!activeTarget) return;
+        
+        clearTimeout(typingTimer);
+        
+        if (!isTypingNow) {
+            isTypingNow = true;
+            db.ref('status/' + myId).update({ typing_to: activeTarget });
+        }
+        
+        typingTimer = setTimeout(() => {
+            isTypingNow = false;
+            db.ref('status/' + myId).update({ typing_to: null });
+        }, 1500);
     });
     </script>
 </body>
