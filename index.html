@@ -233,7 +233,13 @@
         const myStatusRef = db.ref('status/' + myId);
         myStatusRef.set({ online: true, typing_to: null });
         myStatusRef.onDisconnect().remove();
-        db.ref('status').on('value', (snap) => { onlineUsers = snap.val() || {}; updateStatusUI(); renderContacts(); });
+
+        // Когда кто-то в семье меняет статус (заходит, выходит или начинает писать)
+        db.ref('status').on('value', (snap) => { 
+            onlineUsers = snap.val() || {}; 
+            updateStatusUI(); // Обновляем текст в заголовке
+            renderContacts(); // Обновляем зеленые ободки в списке
+        });
     }
 
     function renderContacts() {
@@ -306,16 +312,24 @@
 
     function updateStatusUI() {
         const statusEl = document.getElementById('header-status');
+        // Если мы не в чате или нет места для текста — выходим
         if (!activeTarget || !statusEl) return;
         
         const state = onlineUsers[activeTarget];
         if (state && state.online) {
             if (state.typing_to === myId) {
-                statusEl.innerText = 'печатает...'; statusEl.style.color = '#008069';
+                // Если собеседник печатает нам
+                statusEl.innerText = 'печатает...'; 
+                statusEl.style.color = '#008069';
             } else {
-                statusEl.innerText = 'в сети'; statusEl.style.color = '#00a884';
+                // Если просто в сети
+                statusEl.innerText = 'в сети'; 
+                statusEl.style.color = '#00a884';
             }
-        } else { statusEl.innerText = ''; } 
+        } else { 
+            // Если не в сети — убираем все надписи
+            statusEl.innerText = ''; 
+        } 
     }
 
     function closeChat(isPopState = false) {
