@@ -46,7 +46,7 @@
         .msg-time { font-size: 10px; color: #667781; margin-top: 4px; text-align: right; display: block; }
 
         .input-bar { background: #f0f2f5; padding: 8px 12px; display: flex; align-items: center; gap: 8px; z-index: 10; flex-shrink: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
-        #msg-input { flex: 1; padding: 10px 15px; border: none; border-radius: 20px; font-size: 16px; outline: none; }
+        #msg-input { flex: 1; padding: 10px 15px; border: none; border-radius: 20px; font-size: 16px; outline: none; resize: none; overflow-y: hidden; min-height: 40px; max-height: 120px; font-family: inherit; line-height: 20px; box-sizing: border-box; }
         .send-btn { background: var(--accent); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; }
         
         #emoji-picker { display: none; background: #f0f2f5; padding: 10px; max-height: 250px; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(35px, 1fr)); gap: 10px; border-top: 1px solid #ddd; z-index: 10; flex-shrink: 0; }
@@ -93,7 +93,7 @@
                 
                 <span id="emoji-btn" style="font-size: 26px; cursor: pointer; padding: 0 10px;" onclick="toggleEmojiPicker()">😀</span>
                 
-                <input type="text" id="msg-input" placeholder="Сообщение..." autocomplete="off">
+                <textarea id="msg-input" placeholder="Сообщение..." rows="1"></textarea> id="msg-input" placeholder="Сообщение..." autocomplete="off">
                 <button class="send-btn" onclick="sendMsg()">➤</button>
             </div>
         </div>
@@ -284,14 +284,40 @@
 
     const msgInput = document.getElementById('msg-input');
     msgInput.addEventListener('input', () => {
-        if (!activeTarget) return; clearTimeout(typingTimer);
-        if (!isTypingNow) { isTypingNow = true; db.ref('status/' + myId).update({ typing_to: activeTarget }); }
-        typingTimer = setTimeout(() => { isTypingNow = false; db.ref('status/' + myId).update({ typing_to: null }); }, 1500);
+        // --- АВТОРАСШИРЕНИЕ ПОЛЯ ---
+        msgInput.style.height = 'auto';
+        msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
+       
+        if (!activeTarget) return;
+        clearTimeout(typingTimer);
+        
+        if (!isTypingNow) {
+            isTypingNow = true;
+            db.ref('status/' + myId).update({ typing_to: activeTarget });
+        }
+        
+        typingTimer = setTimeout(() => {
+            isTypingNow = false;
+            db.ref('status/' + myId).update({ typing_to: null });
+        }, 1500);
     });
 
     async function sendMsg() {
-        const val = msgInput.value.trim(); if (!val || !activeTarget) return;
-        msgInput.value = ''; db.ref('messages').push({ sender: myId, receiver: activeTarget, content: val, timestamp: firebase.database.ServerValue.TIMESTAMP });
+        const val = msgInput.value.trim(); 
+        if (!val || !activeTarget) return;
+        
+        // Очищаем поле
+        msgInput.value = ''; 
+        // Сжимаем его обратно до одной строки
+        msgInput.style.height = 'auto'; 
+        
+        // Отправляем сообщение в базу
+        db.ref('messages').push({ 
+            sender: myId, 
+            receiver: activeTarget, 
+            content: val, 
+            timestamp: firebase.database.ServerValue.TIMESTAMP 
+        });
     }
 
     function uploadImage(event) {
@@ -371,12 +397,33 @@ function cleanupOldMessages() {
     });
 
     // Отправка по Enter
-    msgInput.onkeypress = (e) => { 
-        if(e.key==='Enter') {
-            sendMsg();
+    msgInput.onkeydown = (e) => { 
+        if(e.key === 'Enter' && !e.shiftKey) { 
+            e.preventDefault(); 
+            sendMsg(); 
             document.getElementById('emoji-picker').style.display = 'none';
-        }
+        } 
     };
+	// --- ФИКС КЛАВИАТУРЫ ДЛЯ ANDROID ---
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => {
+            // Принудительно задаем высоту body равной видимой части экрана
+            document.body.style.height = window.visualViewport.height + 'px';
+            
+            // Если чат открыт, скроллим в самый низ
+            const cont = document.getElementById('messages-container');
+            if (cont && activeTarget) {
+                cont.scrollTop = cont.scrollHeight;
+            }
+        });
+    }
+
+    // Подстраховка: при клике в поле ввода пытаемся прокрутить экран до него
+    msgInput.addEventListener('focus', () => {
+        setTimeout(() => {
+            document.querySelector('.input-bar').scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 300);
+    });
     </script>
 </body>
 </html>
