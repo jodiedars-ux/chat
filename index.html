@@ -118,8 +118,8 @@
     let activeTarget = null;
     let onlineUsers = {}; 
     let allMessages = [];
-    let unreadCounts = {};
-    let isInitialLoad = true;
+    let hasUnread = {}; 
+    let initialDataLoaded = false;
     let audioCtx;
     let typingTimer, ghostBusterTimer, isTypingNow = false; 
 
@@ -190,25 +190,33 @@
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('app-screen').style.display = 'flex';
         
-        // --- ЗАПУСКАЕМ ОЧИСТКУ СТАРЫХ СООБЩЕНИЙ ---
         cleanupOldMessages();
-        
         renderContacts();
         setTimeout(() => { if(Notification.permission==='default') Notification.requestPermission(); }, 3000);
         
-        db.ref('messages').orderByChild('timestamp').limitToLast(150).on('child_added', (snap) => {
+        const msgsRef = db.ref('messages').orderByChild('timestamp').limitToLast(150);
+
+        // МАГИЯ ЗДЕСЬ: Сначала один раз скачиваем всё, чтобы точно знать, когда история загрузилась
+        msgsRef.once('value', () => {
+            initialDataLoaded = true; // Даем зеленый свет новым уведомлениям!
+        });
+
+        msgsRef.on('child_added', (snap) => {
             const m = snap.val();
             allMessages.push(m);
-            if (!isInitialLoad && m.receiver === myId && activeTarget !== m.sender) {
-                unreadCounts[m.sender] = (unreadCounts[m.sender] || 0) + 1;
-                renderContacts(); playPopSound(); showNotification(users[m.sender].n, m.content);
+            
+            // Если база УЖЕ прогрузилась, и сообщение мне, и чат не открыт
+            if (initialDataLoaded && m.receiver === myId && activeTarget !== m.sender) {
+                hasUnread[m.sender] = true; // Ставим галочку "есть непрочитанные"
+                renderContacts(); 
+                playPopSound(); 
+                showNotification(users[m.sender].n, m.content);
             }
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
                 renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
             }
         });
 
-        setTimeout(() => { isInitialLoad = false; }, 2000);
         const myStatusRef = db.ref('status/' + myId);
         myStatusRef.set({ online: true, typing_to: null });
         myStatusRef.onDisconnect().remove();
@@ -221,9 +229,12 @@
         for (let id in users) {
             if (id === myId) continue;
             const isOnline = onlineUsers[id] && onlineUsers[id].online;
-            const unread = unreadCounts[id] || 0;
+            const hasNew = hasUnread[id]; // Проверяем, есть ли новые
             const statusColor = isOnline ? '#25D366' : '#bbb';
-            const badgeHtml = unread > 0 ? `<div class="badge">${unread}</div>` : '';
+            
+            // Рисуем аккуратную зеленую точку (без цифр), если есть новые сообщения
+            const badgeHtml = hasNew ? `<div style="width: 12px; height: 12px; background: #25D366; border-radius: 50%; margin-right: 5px;"></div>` : '';
+            
             list.innerHTML += `
                 <div class="contact-item" onclick="openChat('${id}')">
                     <div class="avatar" style="border: 2px solid ${statusColor}">${users[id].i}</div>
@@ -235,7 +246,7 @@
 
     function openChat(id) {
         activeTarget = id; 
-        unreadCounts[id] = 0; 
+        hasUnread[id] = false; 
         renderContacts();
 
         document.getElementById('contacts-list').style.display = 'none';
