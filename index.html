@@ -94,7 +94,7 @@
                 
                 <textarea id="msg-input" placeholder="Сообщение..." rows="1"></textarea>
                 
-                <button class="send-btn" onclick="sendMsg()">➤</button>
+                <button class="send-btn" onclick="sendMsg()" ontouchstart="event.preventDefault(); sendMsg();">➤</button>
             </div>
         </div>
     </div>
@@ -169,6 +169,9 @@
     function playPopSound() {
         try {
             if (!audioCtx) return;
+            // Принудительно будим звук, если телефон его усыпил
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain); gain.connect(audioCtx.destination);
@@ -179,19 +182,24 @@
             osc.start(); osc.stop(audioCtx.currentTime + 0.1);
         } catch(e){}
     }
-	
+
     function playSoftTapSound() {
         try {
             if (!audioCtx) return;
+            // Принудительно будим звук
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'sine'; // Делает звук круглым и мягким
-            osc.frequency.setValueAtTime(400, audioCtx.currentTime); // Звучит ниже
-            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.05); // Очень короткий
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime); // Тише в 3 раза
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
+            // Сделали звук чуть длиннее (0.15 сек)
+            osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.15); 
+            // Сделали звук громче (0.4 вместо 0.1)
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime); 
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.15);
         } catch(e){}
     }
 
