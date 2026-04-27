@@ -71,10 +71,10 @@
     <div id="app-screen">
         <header>
             <div class="back-btn" id="back-btn" onclick="closeChat()">←</div>
-            <div class="avatar" id="header-avatar">👤</div>
+            <div class="avatar" id="header-avatar" style="display: none;">👤</div>
             <div style="flex:1">
-                <b id="header-name">Семейный Чат</b><br>
-                <small id="header-status" style="color: #667781;">в сети</small>
+                <b id="header-name"></b><br>
+                <small id="header-status" style="color: #667781;"></small>
             </div>
             <button onclick="logout()" style="background:none; border:none; color:#e74c3c; font-size:14px; font-weight:bold; cursor:pointer;">Выйти</button>
         </header>
@@ -252,23 +252,27 @@
         document.getElementById('contacts-list').style.display = 'none';
         document.getElementById('chat-window').style.display = 'flex';
         document.getElementById('back-btn').style.display = 'block';
-        document.getElementById('header-name').innerText = users[id].n;
-        document.getElementById('header-avatar').innerText = users[id].i;
         
+        // Устанавливаем данные собеседника в заголовок
+        document.getElementById('header-name').innerText = users[id].n;
+        const avatarEl = document.getElementById('header-avatar');
+        avatarEl.innerText = users[id].i;
+        avatarEl.style.display = 'flex'; // Показываем портрет только в чате
+
+        // Добавляем запись в историю браузера, чтобы кнопка "Назад" сработала
+        window.history.pushState({ chatOpen: true }, "");
+
         updateStatusUI();
 
         const cont = document.getElementById('messages-container'); 
         cont.innerHTML = '';
         
-        // Отрисовываем историю
         allMessages.forEach(m => { 
             if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
                 renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
             } 
         });
         
-        // Магия тут: прокручиваем вниз с небольшой задержкой (100мс), 
-        // чтобы браузер успел отрисовать все блоки сообщений
         setTimeout(() => {
             cont.scrollTop = cont.scrollHeight;
         }, 100);
@@ -288,31 +292,25 @@
         } else { typingEl.style.display = 'none'; statusEl.innerText = 'не в сети'; statusEl.style.color = '#667781'; }
     }
 
-    function closeChat() {
-        activeTarget = null; document.getElementById('contacts-list').style.display = 'block';
-        document.getElementById('chat-window').style.display = 'none'; document.getElementById('back-btn').style.display = 'none';
-        document.getElementById('header-name').innerText = 'Семейный Чат';
-    }
-
-    const msgInput = document.getElementById('msg-input');
-    msgInput.addEventListener('input', () => {
-        // --- АВТОРАСШИРЕНИЕ ПОЛЯ ---
-        msgInput.style.height = 'auto';
-        msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
-       
+    function closeChat(isPopState = false) {
         if (!activeTarget) return;
-        clearTimeout(typingTimer);
+
+        activeTarget = null; 
+        document.getElementById('contacts-list').style.display = 'block';
+        document.getElementById('chat-window').style.display = 'none'; 
+        document.getElementById('back-btn').style.display = 'none';
         
-        if (!isTypingNow) {
-            isTypingNow = true;
-            db.ref('status/' + myId).update({ typing_to: activeTarget });
+        // Полностью очищаем заголовок при выходе в список контактов
+        document.getElementById('header-name').innerText = '';
+        document.getElementById('header-avatar').style.display = 'none';
+        document.getElementById('header-status').innerText = '';
+
+        // Если закрыли кнопкой в чате, а не системной кнопкой "Назад", 
+        // убираем созданную запись из истории
+        if (!isPopState) {
+            window.history.back();
         }
-        
-        typingTimer = setTimeout(() => {
-            isTypingNow = false;
-            db.ref('status/' + myId).update({ typing_to: null });
-        }, 1500);
-    });
+    }
 
     async function sendMsg() {
         const val = msgInput.value.trim(); 
@@ -460,6 +458,13 @@ function cleanupOldMessages() {
             db.ref('status/' + myId).update({ typing_to: null });
         }, 1500);
     });
+	// Слушаем системное событие "Назад" на телефоне
+    window.onpopstate = function(event) {
+        if (activeTarget) {
+            // Если чат был открыт, закрываем его (передаем true, чтобы не зациклить историю)
+            closeChat(true);
+        }
+    };
     </script>
 </body>
 </html>
