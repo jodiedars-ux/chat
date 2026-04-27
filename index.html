@@ -82,7 +82,6 @@
         <div id="contacts-list"></div>
 
         <div id="chat-window">
-            <div id="typing-indicator">печатает...</div>
             <div id="messages-container"></div>
             
             <div id="emoji-picker"></div>
@@ -196,24 +195,38 @@
         
         const msgsRef = db.ref('messages').orderByChild('timestamp').limitToLast(150);
 
-        // МАГИЯ ЗДЕСЬ: Сначала один раз скачиваем всё, чтобы точно знать, когда история загрузилась
-        msgsRef.once('value', () => {
-            initialDataLoaded = true; // Даем зеленый свет новым уведомлениям!
-        });
+        msgsRef.once('value', () => { initialDataLoaded = true; });
 
         msgsRef.on('child_added', (snap) => {
             const m = snap.val();
+            m.key = snap.key; // Сохраняем ключ для галочек
             allMessages.push(m);
             
-            // Если база УЖЕ прогрузилась, и сообщение мне, и чат не открыт
+            // Если я ПРЯМО СЕЙЧАС смотрю в чат с этим человеком - сразу помечаем прочитанным
+            if (initialDataLoaded && m.receiver === myId && activeTarget === m.sender) {
+                snap.ref.update({ read: true });
+            }
+
             if (initialDataLoaded && m.receiver === myId && activeTarget !== m.sender) {
-                hasUnread[m.sender] = true; // Ставим галочку "есть непрочитанные"
-                renderContacts(); 
-                playPopSound(); 
-                showNotification(users[m.sender].n, m.content);
+                hasUnread[m.sender] = true;
+                renderContacts(); playPopSound(); showNotification(users[m.sender].n, m.content);
             }
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
-                renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
+                renderMsg(m, m.sender === myId ? 'sent' : 'received'); // Передаем объект m
+            }
+        });
+
+        // СЛУШАЕМ ИЗМЕНЕНИЯ: Если кто-то прочитал мое сообщение
+        msgsRef.on('child_changed', (snap) => {
+            const updatedMsg = snap.val();
+            const div = document.getElementById('msg-' + snap.key);
+            // Находим это сообщение на экране и красим галочки в синий
+            if (div && updatedMsg.sender === myId && updatedMsg.read) {
+                const tickEl = div.querySelector('.tick');
+                if (tickEl) {
+                    tickEl.innerText = '✓✓';
+                    tickEl.style.color = '#53bdeb';
+                }
             }
         });
 
@@ -257,47 +270,52 @@
         hasUnread[id] = false; 
         renderContacts();
 
+        // 1. Помечаем в базе непрочитанные от этого человека как "прочитано"
+        db.ref('messages').orderByChild('receiver').equalTo(myId).once('value', snap => {
+            snap.forEach(child => {
+                if (child.val().sender === id && !child.val().read) {
+                    child.ref.update({ read: true });
+                }
+            });
+        });
+
         document.getElementById('contacts-list').style.display = 'none';
         document.getElementById('chat-window').style.display = 'flex';
         document.getElementById('back-btn').style.display = 'block';
         
-        // Устанавливаем данные собеседника в заголовок
         document.getElementById('header-name').innerText = users[id].n;
         const avatarEl = document.getElementById('header-avatar');
         avatarEl.innerText = users[id].i;
-        avatarEl.style.display = 'flex'; // Показываем портрет только в чате
+        avatarEl.style.display = 'flex'; 
 
-        // Добавляем запись в историю браузера, чтобы кнопка "Назад" сработала
         window.history.pushState({ chatOpen: true }, "");
-
         updateStatusUI();
 
         const cont = document.getElementById('messages-container'); 
         cont.innerHTML = '';
         
+        // 2. Отрисовываем историю (передаем объект m целиком)
         allMessages.forEach(m => { 
             if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
-                renderMsg(m.content, m.sender === myId ? 'sent' : 'received', m.timestamp);
+                renderMsg(m, m.sender === myId ? 'sent' : 'received');
             } 
         });
         
-        setTimeout(() => {
-            cont.scrollTop = cont.scrollHeight;
-        }, 100);
+        setTimeout(() => { cont.scrollTop = cont.scrollHeight; }, 100);
     }
 
     function updateStatusUI() {
         const statusEl = document.getElementById('header-status');
-        const typingEl = document.getElementById('typing-indicator');
         if (!activeTarget || !statusEl) return;
+        
         const state = onlineUsers[activeTarget];
         if (state && state.online) {
             if (state.typing_to === myId) {
-                typingEl.style.display = 'block'; statusEl.innerText = 'печатает...'; statusEl.style.color = '#008069';
+                statusEl.innerText = 'печатает...'; statusEl.style.color = '#008069';
             } else {
-                typingEl.style.display = 'none'; statusEl.innerText = 'в сети'; statusEl.style.color = '#00a884';
+                statusEl.innerText = 'в сети'; statusEl.style.color = '#00a884';
             }
-        } else { typingEl.style.display = 'none'; statusEl.innerText = 'не в сети'; statusEl.style.color = '#667781'; }
+        } else { statusEl.innerText = ''; } 
     }
 
     function closeChat(isPopState = false) {
@@ -334,7 +352,8 @@
             sender: myId, 
             receiver: activeTarget, 
             content: val, 
-            timestamp: firebase.database.ServerValue.TIMESTAMP 
+            timestamp: firebase.database.ServerValue.TIMESTAMP,
+            read: false
         });
     }
 
@@ -349,26 +368,42 @@
                 if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
                 canvas.width = width; canvas.height = height;
                 canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                db.ref('messages').push({ sender: myId, receiver: activeTarget, content: canvas.toDataURL('image/jpeg', 0.6), timestamp: firebase.database.ServerValue.TIMESTAMP });
+                
+                // Отправляем картинку в базу и ставим метку "не прочитано"
+                db.ref('messages').push({ 
+                    sender: myId, 
+                    receiver: activeTarget, 
+                    content: canvas.toDataURL('image/jpeg', 0.6), 
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    read: false
+                });
             }
             img.src = e.target.result;
         }
         reader.readAsDataURL(file); event.target.value = '';
     }
 
-    function renderMsg(text, type, time) {
+   // Теперь принимаем m (весь объект сообщения) вместо просто текста
+    function renderMsg(m, type) { 
         const cont = document.getElementById('messages-container');
-        const t = new Date(time || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const t = new Date(m.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const div = document.createElement('div'); 
         div.className = `msg ${type}`;
+        div.id = 'msg-' + m.key; // Уникальный ID для поиска и покраски галочек
         
-        if (text.startsWith('data:image')) {
-            // Добавляем onload="this.closest('#messages-container').scrollTop = this.closest('#messages-container').scrollHeight"
-            // Это заставит чат еще раз прыгнуть вниз, когда картинка полностью прогрузится
-            div.innerHTML = `<img src="${text}" style="max-width:100%; border-radius:8px; display:block;" onload="this.parentElement.parentElement.scrollTop = this.parentElement.parentElement.scrollHeight">
-                             <span class="msg-time">${t}</span>`;
+        // Магия галочек для исходящих сообщений
+        let ticks = '';
+        if (type === 'sent') {
+            const color = m.read ? '#53bdeb' : '#888'; // Синие, если прочитали
+            const sign = m.read ? '✓✓' : '✓';
+            ticks = `<span class="tick" style="color: ${color}; margin-left: 6px; font-weight: bold; font-size: 11px;">${sign}</span>`;
+        }
+        
+        if (m.content.startsWith('data:image')) {
+            div.innerHTML = `<img src="${m.content}" style="max-width:100%; border-radius:8px; display:block;" onload="this.parentElement.parentElement.scrollTop = this.parentElement.parentElement.scrollHeight">
+                             <span class="msg-time">${t}${ticks}</span>`;
         } else {
-            div.innerHTML = `${text.replace(/\n/g, '<br>')} <span class="msg-time">${t}</span>`;
+            div.innerHTML = `${m.content.replace(/\n/g, '<br>')} <span class="msg-time">${t}${ticks}</span>`;
         }
         
         cont.appendChild(div);
