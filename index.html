@@ -224,35 +224,45 @@
         msgsRef.on('child_added', (snap) => {
             const m = snap.val();
             m.key = snap.key; 
+            
+            // ЗАЩИТА ОТ ДУБЛЕЙ: Если сообщение уже есть в памяти, пропускаем его.
+            // Это решает проблему, когда Firebase дважды присылает сообщение из-за задержек сети.
+            if (allMessages.some(msg => msg.key === m.key)) return;
+
             allMessages.push(m);
             
             // Если я ПРЯМО СЕЙЧАС смотрю в чат с этим человеком - помечаем прочитанным
             if (initialDataLoaded && m.receiver === myId && activeTarget === m.sender) {
-                snap.ref.update({ read: true });
+                m.read = true; // Сразу ставим галочку локально
+                db.ref('messages/' + m.key).update({ read: true }); // Сообщаем серверу
             }
 
-            // Если чат ЗАКРЫТ - громкий звук и уведомление на телефон
             if (initialDataLoaded && m.receiver === myId && activeTarget !== m.sender) {
                 hasUnread[m.sender] = true;
                 renderContacts(); playPopSound(); showNotification(users[m.sender].n, m.content);
             }
-            
-            // Отрисовка сообщения внутри разговора
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
-                renderMsg(m, m.sender === myId ? 'sent' : 'received');
+                renderMsg(m, m.sender === myId ? 'sent' : 'received'); 
                 
-                // ЕСЛИ ЧАТ ОТКРЫТ И ПРИШЛО НОВОЕ СООБЩЕНИЕ МНЕ - ИГРАЕМ МЯГКИЙ ЗВУК
                 if (initialDataLoaded && m.receiver === myId && m.sender === activeTarget) {
                     playSoftTapSound();
                 }
             }
         });
 
-        // СЛУШАЕМ ИЗМЕНЕНИЯ: Если кто-то прочитал мое сообщение
+        // СЛУШАЕМ ИЗМЕНЕНИЯ (Когда кто-то прочитал наше сообщение)
         msgsRef.on('child_changed', (snap) => {
             const updatedMsg = snap.val();
+            updatedMsg.key = snap.key;
+            
+            // 1. НАВСЕГДА СОХРАНЯЕМ В ПАМЯТЬ (Чтобы при нажатии "Назад" галочки не исчезали)
+            const index = allMessages.findIndex(m => m.key === snap.key);
+            if (index !== -1) {
+                allMessages[index] = updatedMsg;
+            }
+
+            // 2. Красим галочки на экране (если чат сейчас открыт)
             const div = document.getElementById('msg-' + snap.key);
-            // Находим это сообщение на экране и красим галочки в синий
             if (div && updatedMsg.sender === myId && updatedMsg.read) {
                 const tickEl = div.querySelector('.tick');
                 if (tickEl) {
@@ -308,13 +318,12 @@
         hasUnread[id] = false; 
         renderContacts();
 
-        // 1. Помечаем в базе непрочитанные от этого человека как "прочитано"
-        db.ref('messages').orderByChild('receiver').equalTo(myId).once('value', snap => {
-            snap.forEach(child => {
-                if (child.val().sender === id && !child.val().read) {
-                    child.ref.update({ read: true });
-                }
-            });
+        // БЕЗОПАСНОЕ ОБНОВЛЕНИЕ: Перебираем локальную память вместо сложного запроса
+        allMessages.forEach(m => {
+            if (m.sender === id && m.receiver === myId && !m.read) {
+                m.read = true; // Мгновенно обновляем для себя
+                db.ref('messages/' + m.key).update({ read: true }); // Точечно обновляем на сервере
+            }
         });
 
         document.getElementById('contacts-list').style.display = 'none';
@@ -332,7 +341,6 @@
         const cont = document.getElementById('messages-container'); 
         cont.innerHTML = '';
         
-        // 2. Отрисовываем историю (передаем объект m целиком)
         allMessages.forEach(m => { 
             if ((m.sender === myId && m.receiver === id) || (m.sender === id && m.receiver === myId)) {
                 renderMsg(m, m.sender === myId ? 'sent' : 'received');
