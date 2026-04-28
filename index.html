@@ -225,22 +225,32 @@
             const m = snap.val();
             m.key = snap.key; 
             
-            // ЗАЩИТА ОТ ДУБЛЕЙ: Если сообщение уже есть в памяти, пропускаем его.
-            // Это решает проблему, когда Firebase дважды присылает сообщение из-за задержек сети.
             if (allMessages.some(msg => msg.key === m.key)) return;
 
             allMessages.push(m);
             
-            // Если я ПРЯМО СЕЙЧАС смотрю в чат с этим человеком - помечаем прочитанным
+            // Если я ПРЯМО СЕЙЧАС в чате - сразу помечаем прочитанным
             if (initialDataLoaded && m.receiver === myId && activeTarget === m.sender) {
-                m.read = true; // Сразу ставим галочку локально
-                db.ref('messages/' + m.key).update({ read: true }); // Сообщаем серверу
+                m.read = true; 
+                db.ref('messages/' + m.key).update({ read: true }); 
             }
 
-            if (initialDataLoaded && m.receiver === myId && activeTarget !== m.sender) {
+            // --- НОВАЯ ЛОГИКА УВЕДОМЛЕНИЙ ---
+            // Если сообщение мне, я не в чате с отправителем, и оно НЕ прочитано
+            if (m.receiver === myId && activeTarget !== m.sender && !m.read) {
+                
+                // 1. Зеленую точку зажигаем ВСЕГДА (даже если нас не было в сети)
                 hasUnread[m.sender] = true;
-                renderContacts(); playPopSound(); showNotification(users[m.sender].n, m.content);
+                renderContacts(); 
+                
+                // 2. А вот ЗВУК и ВСПЛЫВАЮЩЕЕ ОКНО включаем ТОЛЬКО если мы уже сидим в приложении
+                if (initialDataLoaded) {
+                    playPopSound(); 
+                    showNotification(users[m.sender].n, m.content);
+                }
             }
+
+            // Отрисовка сообщения на экране чата
             if (activeTarget && ((m.sender === myId && m.receiver === activeTarget) || (m.sender === activeTarget && m.receiver === myId))) {
                 renderMsg(m, m.sender === myId ? 'sent' : 'received'); 
                 
